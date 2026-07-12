@@ -72,5 +72,5 @@ fields:
 - name: summary
   type: string
   description: 'A concise summary of who this person is: key attributes, background,
-    and notable traits. Keep within 500 characters. Focus on durable personal facts.'
+    and notable traits. Focus on durable personal facts.'
 embedding_template: '{{ summary }}'

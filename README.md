@@ -21,6 +21,8 @@ patches/             → 独立 .patch 文件，每个修复一个
 | [#3143](https://github.com/volcengine/OpenViking/pull/3143) | `memory_updater.py` | Qdrant abstract 用 VLM 生成的 summary 而非全文 |
 | [#3172](https://github.com/volcengine/OpenViking/pull/3172) | `session.py` | extract 阶段用 Role.ROOT 绕过 trusted 模式 peer 隔离 |
 | [#N/A](https://github.com/njuboy11/openviking-patched) | `context-lifecycle-service.js` | assemble fallback 加 token 预算裁剪（20%），防 context overflow |
+| [#N/A](https://github.com/njuboy11/openviking-patched) | `schema_model_generator.py` | summary 字段强制 required，VLM 每次必须生成 |
+| [#N/A](https://github.com/njuboy11/openviking-patched) | `*.yaml` (10 个模板) | 移除 summary 描述中的 "Keep within 500 characters" |
 
 ### 早期补丁（已在本地生效，上游 Open 或已关）
 

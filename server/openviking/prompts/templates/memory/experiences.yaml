@@ -111,6 +111,6 @@ fields:
 - name: summary
   type: string
   description: 'A concise summary of this experience: the situation, what was done,
-    and the key lesson. Keep within 500 characters. Focus on what makes this experience
+    and the key lesson. Focus on what makes this experience
     worth retrieving later.'
 embedding_template: '{{ summary }}'

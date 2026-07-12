@@ -56,5 +56,5 @@ fields:
 - name: summary
   type: string
   description: A concise summary of the core truths, boundaries, and vibe that define
-    this entity. Keep within 500 characters. Focus on the essential character traits.
+    this entity. Focus on the essential character traits.
 embedding_template: '{{ summary }}'

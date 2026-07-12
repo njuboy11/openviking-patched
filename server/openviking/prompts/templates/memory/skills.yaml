@@ -134,6 +134,6 @@ fields:
 - name: summary
   type: string
   description: A concise summary of this skill's purpose, effectiveness, and when
-    to use it. Keep within 500 characters. Focus on the skill's core competency and
+    to use it. Focus on the skill's core competency and
     success rate.
 embedding_template: '{{ summary }}'

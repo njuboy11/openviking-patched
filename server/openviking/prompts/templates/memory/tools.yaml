@@ -145,5 +145,5 @@ fields:
 - name: summary
   type: string
   description: A concise summary of this tool's purpose, optimal usage, and key learnings.
-    Keep within 500 characters. Focus on when and how to use this tool effectively.
+    Focus on when and how to use this tool effectively.
 embedding_template: '{{ summary }}'

@@ -161,5 +161,5 @@ fields:
 - name: summary
   type: string
   description: 'A concise summary of this trajectory: what was attempted, the outcome,
-    and key takeaways. Keep within 500 characters. Focus on the decision path and
+    and key takeaways. Focus on the decision path and
     its result.'
