@@ -20,6 +20,7 @@ patches/             → 独立 .patch 文件，每个修复一个
 | [#3137](https://github.com/volcengine/OpenViking/pull/3137) | `session.py` | abstract 提取跳过 markdown 标题，返回真实文本 |
 | [#3143](https://github.com/volcengine/OpenViking/pull/3143) | `memory_updater.py` | Qdrant abstract 用 VLM 生成的 summary 而非全文 |
 | [#3172](https://github.com/volcengine/OpenViking/pull/3172) | `session.py` | extract 阶段用 Role.ROOT 绕过 trusted 模式 peer 隔离 |
+| [#N/A](https://github.com/njuboy11/openviking-patched) | `context-lifecycle-service.js` | assemble fallback 加 token 预算裁剪（20%），防 context overflow |
 
 ### 早期补丁（已在本地生效，上游 Open 或已关）
 

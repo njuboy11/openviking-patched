@@ -1384,16 +1384,16 @@ class MemoryUpdater:
         vlm_cfg = config.vlm
 
         prompts = {
-            "experiences": "Summarize this experience: the situation, approach, and key lesson. Write in Chinese if the content is Chinese, English otherwise. Max 1000 chars.",
-            "cases": "Summarize this training case: the task, actions taken, and outcome. Max 1000 chars.",
-            "entities": "Describe this entity: who/what, key attributes, and context. Max 800 chars.",
-            "identity": "Describe this identity: name, role, key traits. Max 600 chars.",
-            "preferences": "Describe this user preference: what is preferred, when, and any constraints. Max 800 chars.",
-            "profile": "Describe this profile: key characteristics and context. Max 600 chars.",
-            "skills": "Describe this skill: what it does, when to use it, and key capabilities. Max 1000 chars.",
-            "soul": "Describe this behavioral directive: the rule, its purpose, and when it applies. Max 600 chars.",
-            "tools": "Describe this tool: what it does, key features, and usage notes. Max 1000 chars.",
-            "trajectories": "Summarize this agent trajectory: the task, key actions taken, and the outcome. Max 1000 chars.",
+            "experiences": "用中文撰写这段经验的摘要，包含：情境、做法、关键教训。简洁但完整，根据内容复杂度自由决定长度。只输出摘要。",
+            "cases": "用中文撰写这个案例的摘要，包含：任务、行动、结果。简洁但完整，自由决定长度。只输出摘要。",
+            "entities": "用中文描述这个实体：是什么/谁、关键属性、背景。简洁但完整，自由决定长度。只输出摘要。",
+            "identity": "用中文描述这个身份：名称、角色、关键特征。简洁但完整，自由决定长度。只输出摘要。",
+            "preferences": "用中文描述这个偏好：内容、场景、约束。简洁但完整，自由决定长度。只输出摘要。",
+            "profile": "用中文描述这个档案：关键特征和背景。简洁但完整，自由决定长度。只输出摘要。",
+            "skills": "用中文描述这个技能：做什么、何时用、核心能力。简洁但完整，自由决定长度。只输出摘要。",
+            "soul": "用中文描述这个行为准则：规则、目的、适用场景。简洁但完整，自由决定长度。只输出摘要。",
+            "tools": "用中文描述这个工具：用途、关键功能、使用说明。简洁但完整，自由决定长度。只输出摘要。",
+            "trajectories": "用中文摘要这条轨迹：任务、关键操作、结果。简洁但完整，自由决定长度。只输出摘要。",
         }
 
         system_prompt = prompts.get(memory_type, prompts["experiences"])

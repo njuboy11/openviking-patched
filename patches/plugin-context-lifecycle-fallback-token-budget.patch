@@ -1,0 +1,157 @@
+--- /root/.openclaw/workspace/openviking-patched/plugin/openviking-plugin/dist/services/context-lifecycle-service.js	2026-07-12 15:09:28.273327928 +0800
++++ /root/.openclaw/extensions/openviking/dist/services/context-lifecycle-service.js	2026-07-12 18:11:44.935867509 +0800
+@@ -178,18 +178,43 @@
+     }
+ }
+ function assemblePassthrough(params) {
+-    const { diag, ovSessionId, reason, liveMessages, originalTokens, extra } = params;
++    const { diag, ovSessionId, reason, liveMessages, originalTokens, tokenBudget, roughEstimate, extra } = params;
++    let messages = liveMessages;
++    let estimatedTokens = originalTokens;
++    let trimmed = false;
++
++    if (
++        typeof tokenBudget === "number" &&
++        tokenBudget > 0 &&
++        typeof roughEstimate === "function" &&
++        originalTokens > tokenBudget
++    ) {
++        const safeBudget = Math.floor(tokenBudget * 0.2);
++        let keep = liveMessages.length;
++        for (; keep > 0; keep--) {
++            const slice = liveMessages.slice(liveMessages.length - keep);
++            estimatedTokens = roughEstimate(slice);
++            if (estimatedTokens <= safeBudget) break;
++        }
++        if (keep < liveMessages.length) {
++            messages = liveMessages.slice(liveMessages.length - keep);
++            trimmed = true;
++        }
++    }
++
+     diag("assemble_result", ovSessionId, {
+         passthrough: true,
+         reason,
+-        outputMessagesCount: liveMessages.length,
++        outputMessagesCount: messages.length,
+         inputTokenEstimate: originalTokens,
+-        estimatedTokens: originalTokens,
+-        tokensSaved: 0,
+-        savingPct: 0,
++        estimatedTokens,
++        tokensSaved: originalTokens - estimatedTokens,
++        savingPct: originalTokens > 0 ? Math.round(((originalTokens - estimatedTokens) / originalTokens) * 100) : 0,
++        trimmed,
++        originalMessagesCount: liveMessages.length,
+         ...extra,
+     });
+-    return { messages: liveMessages, estimatedTokens: originalTokens };
++    return { messages, estimatedTokens };
+ }
+ function isSessionNotFoundError(err) {
+     const errorMessage = String(err);
+@@ -217,7 +242,7 @@
+         messages: messageDigest(messages),
+     });
+     if (isBypassedSession({ sessionId, sessionKey })) {
+-        return assemblePassthrough({ diag, ovSessionId, reason: "session_bypassed", liveMessages: messages, originalTokens });
++        return assemblePassthrough({ diag, ovSessionId, reason: "session_bypassed", liveMessages: messages, tokenBudget, roughEstimate, originalTokens });
+     }
+     if (isTransformContextAssemble) {
+         if (latestMessage?.role !== "user") {
+@@ -226,19 +251,19 @@
+                 ovSessionId,
+                 reason: "transform_context_non_user_tail",
+                 liveMessages: messages,
+-                originalTokens,
++                tokenBudget, roughEstimate, originalTokens,
+                 extra: { latestRole: latestMessage?.role ?? null },
+             });
+         }
+         if (!cfg.autoRecall) {
+-            return assemblePassthrough({ diag, ovSessionId, reason: "transform_context_auto_recall_disabled", liveMessages: messages, originalTokens });
++            return assemblePassthrough({ diag, ovSessionId, reason: "transform_context_auto_recall_disabled", liveMessages: messages, tokenBudget, roughEstimate, originalTokens });
+         }
+         if (hasAutoRecallBlock(latestMessage)) {
+-            return assemblePassthrough({ diag, ovSessionId, reason: "transform_context_recall_already_injected", liveMessages: messages, originalTokens });
++            return assemblePassthrough({ diag, ovSessionId, reason: "transform_context_recall_already_injected", liveMessages: messages, tokenBudget, roughEstimate, originalTokens });
+         }
+         const recallQuery = prepareRecallQuery(extractAgentMessageText(latestMessage));
+         if (!recallQuery.query || recallQuery.query.length < 5) {
+-            return assemblePassthrough({ diag, ovSessionId, reason: "transform_context_empty_recall_query", liveMessages: messages, originalTokens });
++            return assemblePassthrough({ diag, ovSessionId, reason: "transform_context_empty_recall_query", liveMessages: messages, tokenBudget, roughEstimate, originalTokens });
+         }
+         if (recallQuery.truncated) {
+             logger.info(`openviking: recall query truncated (` +
+@@ -275,7 +300,7 @@
+                     ovSessionId,
+                     reason: "transform_context_no_recall_hits",
+                     liveMessages: messages,
+-                    originalTokens,
++                    tokenBudget, roughEstimate, originalTokens,
+                     extra: { memoryCount: recall.memoryCount },
+                 });
+             }
+@@ -300,7 +325,7 @@
+                 ovSessionId,
+                 reason: "transform_context_recall_failed",
+                 liveMessages: messages,
+-                originalTokens,
++                tokenBudget, roughEstimate, originalTokens,
+                 extra: { error: String(err) },
+             });
+         }
+@@ -319,7 +344,7 @@
+                 ovSessionId,
+                 reason: "no_ov_data",
+                 liveMessages: messages,
+-                originalTokens,
++                tokenBudget, roughEstimate, originalTokens,
+                 extra: { archiveCount: 0, activeCount: 0 },
+             });
+         }
+@@ -329,7 +354,7 @@
+                 ovSessionId,
+                 reason: "ov_msgs_fewer_than_input",
+                 liveMessages: messages,
+-                originalTokens,
++                tokenBudget, roughEstimate, originalTokens,
+                 extra: { archiveCount: 0, activeCount },
+             });
+         }
+@@ -340,7 +365,7 @@
+                 ovSessionId,
+                 reason: "sanitized_empty",
+                 liveMessages: messages,
+-                originalTokens,
++                tokenBudget, roughEstimate, originalTokens,
+                 extra: { archiveCount: preAbstracts.length, activeCount },
+             });
+         }
+@@ -381,7 +406,7 @@
+                 ovSessionId,
+                 reason: "session_not_found",
+                 liveMessages: messages,
+-                originalTokens,
++                tokenBudget, roughEstimate, originalTokens,
+                 extra: {
+                     error: errorMessage,
+                     tokenBudget,
+@@ -400,7 +425,16 @@
+             senderIdFound: sender.found,
+             senderId: sender.senderId ?? null,
+         });
+-        return { messages, estimatedTokens: roughEstimate(messages) };
++        return assemblePassthrough({
++            diag,
++            ovSessionId,
++            reason: "ov_assemble_error",
++            liveMessages: messages,
++            originalTokens,
++            tokenBudget,
++            roughEstimate,
++            extra: { error: String(err), tokenBudget, agentId: resolveAgentId(ovSessionId) },
++        });
+     }
+ }
+ function normalizeTimestamp(value) {
