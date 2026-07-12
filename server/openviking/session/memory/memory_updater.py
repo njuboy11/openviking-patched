@@ -1406,7 +1406,6 @@ class MemoryUpdater:
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_text},
                 ],
-                "max_tokens": 1500,
                 "temperature": 0.3,
             }).encode()
 
