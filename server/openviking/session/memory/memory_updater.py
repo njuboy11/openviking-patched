@@ -1270,7 +1270,10 @@ class MemoryUpdater:
                 # If missing and this type has a summary field in its schema, regenerate
                 # via VLM so stale summaries don't linger after content edits.
                 abstract = mf.extra_fields.get("summary", "")
-                if not abstract and memory_type and self._registry:
+                # For trajectories, always use full content as abstract — never VLM summary
+                if memory_type == "trajectories":
+                    abstract = ""
+                elif not abstract and memory_type and self._registry:
                     schema = self._registry.get(memory_type)
                     if schema and any(f.name == "summary" for f in schema.fields):
                         try:
@@ -1372,6 +1375,45 @@ class MemoryUpdater:
         return attempted_count
 
     @staticmethod
+    def _strip_meta_labels(text):
+        """Remove meta field name prefixes but keep values, for cleaner VLM input."""
+        import re as _re
+        lines = text.split('\n')
+        cleaned = []
+        skip_section_header = False
+        for line in lines:
+            if line.startswith('# '):
+                cleaned.append(line)
+                skip_section_header = False
+                continue
+            if _re.match(r'^- (Operation Intent|Preconditions|Immutable Object Boundary|Procedure|Write Field Provenance|Anti[- ]?patterns|Applicability Boundary|Negative Applicability|Result|Evidence):\s*$', line):
+                skip_section_header = True
+                continue
+            m = _re.match(r'^- (Domain|Trigger|Family|Primary object|Target object[^:]*|Result|Evidence):\s*(.*)', line)
+            if m:
+                cleaned.append(m.group(2))
+                skip_section_header = False
+                continue
+            if skip_section_header and line.startswith('  '):
+                inner = line.lstrip()
+                inner_m = _re.match(r'^- [^:]+:\s*(.*)', inner)
+                if inner_m:
+                    cleaned.append(inner_m.group(1))
+                else:
+                    inner_m2 = _re.match(r'^\d+\.\s*(.*)', inner)
+                    if inner_m2:
+                        cleaned.append(inner_m2.group(1))
+                    else:
+                        cleaned.append(inner)
+                continue
+            if line.strip() == '':
+                skip_section_header = False
+                cleaned.append('')
+                continue
+            cleaned.append(line)
+        return '\n'.join(cleaned).strip()
+
+    @staticmethod
     async def _regenerate_summary(
         memory_type: str,
         content: str,
@@ -1380,24 +1422,31 @@ class MemoryUpdater:
         import asyncio, json, urllib.request
         from openviking_cli.utils.config import get_openviking_config
 
+        # Strip meta labels from trajectories for cleaner VLM input
+        content_clean = MemoryUpdater._strip_meta_labels(content)
+
+        # Short content: use original verbatim, don't waste a VLM call
+        if len(content_clean) < 500:
+            return content_clean.strip()
+
         config = get_openviking_config()
         vlm_cfg = config.vlm
 
         prompts = {
-            "experiences": "用中文撰写这段经验的摘要，包含：情境、做法、关键教训。简洁但完整，根据内容复杂度自由决定长度。只输出摘要。",
-            "cases": "用中文撰写这个案例的摘要，包含：任务、行动、结果。简洁但完整，自由决定长度。只输出摘要。",
-            "entities": "用中文描述这个实体：是什么/谁、关键属性、背景。简洁但完整，自由决定长度。只输出摘要。",
-            "identity": "用中文描述这个身份：名称、角色、关键特征。简洁但完整，自由决定长度。只输出摘要。",
-            "preferences": "用中文描述这个偏好：内容、场景、约束。简洁但完整，自由决定长度。只输出摘要。",
-            "profile": "用中文描述这个档案：关键特征和背景。简洁但完整，自由决定长度。只输出摘要。",
-            "skills": "用中文描述这个技能：做什么、何时用、核心能力。简洁但完整，自由决定长度。只输出摘要。",
-            "soul": "用中文描述这个行为准则：规则、目的、适用场景。简洁但完整，自由决定长度。只输出摘要。",
-            "tools": "用中文描述这个工具：用途、关键功能、使用说明。简洁但完整，自由决定长度。只输出摘要。",
-            "trajectories": "用中文摘要这条轨迹：任务、关键操作、结果。简洁但完整，自由决定长度。只输出摘要。",
+            "experiences": "Summarize this experience: the situation, approach, and key lesson. Write in Chinese if the content is Chinese, English otherwise.",
+            "cases": "Summarize this training case: the task, actions taken, and outcome.",
+            "entities": "Describe this entity: who/what, key attributes, and context. If the content is already very short (<500 chars), keep the original content verbatim; do not expand.",
+            "identity": "Describe this identity: name, role, key traits.",
+            "preferences": "Describe this user preference: what is preferred, when, and any constraints.",
+            "profile": "Describe this profile: key characteristics and context.",
+            "skills": "Describe this skill: what it does, when to use it, and key capabilities.",
+            "soul": "Describe this behavioral directive: the rule, its purpose, and when it applies.",
+            "tools": "Describe this tool: what it does, key features, and usage notes.",
+            "trajectories": "Trajectories use original content as abstract — no VLM summary needed.",
         }
 
         system_prompt = prompts.get(memory_type, prompts["experiences"])
-        user_text = content[:8000]
+        user_text = content_clean[:8000]
 
         def _call() -> str:
             body = json.dumps({
@@ -1428,7 +1477,7 @@ class MemoryUpdater:
         # Strip <think> tags from MiniMax M3 reasoning output
         import re
         cleaned = re.sub(r"<think>.*?</think>\s*", "", raw, flags=re.DOTALL).strip()
-        return cleaned[:1000] if len(cleaned) > 1000 else cleaned
+        return cleaned
 
     @staticmethod
     def _truncate_memory_abstract(abstract: str) -> str:
