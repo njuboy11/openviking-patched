@@ -1266,6 +1266,9 @@ class MemoryUpdater:
                 mf = MemoryFileUtils.read(content, uri=uri)
                 from openviking.session.memory.utils.link_renderer import LinkRenderer
 
+                # Resolve memory_type early — needed for trajectories bypass and summary regen
+                memory_type = uri_memory_type_map.get(uri)
+
                 # Prefer VLM-generated summary from extra_fields (e.g. events type).
                 # If missing and this type has a summary field in its schema, regenerate
                 # via VLM so stale summaries don't linger after content edits.
@@ -1297,7 +1300,6 @@ class MemoryUpdater:
                 abstract = self._truncate_memory_abstract(abstract)
                 embedding_text = abstract
 
-                memory_type = uri_memory_type_map.get(uri)
                 if memory_type and self._registry:
                     schema = self._registry.get(memory_type)
                     if schema and schema.embedding_template:
