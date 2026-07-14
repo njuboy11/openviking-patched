@@ -1,23 +1,24 @@
-# commit-compaction-init-params
+# plugin-fallback-safe-truncate
 
 ## Summary
-修复 compaction/commit 时 `SessionExtractContextProvider.__init__()` 报 `TypeError: got an unexpected keyword argument 'include_tool_parts_in_conversation'` 导致 compaction 失败的问题。
+修复 OV Plugin fallback 路径在全量消息送给大模型导致上下文溢出（1MB+ raw messages）的问题。
 
 ## Root Cause
-`compressor_v3.py` 在实例化 `SessionExtractContextProvider` 时传入了 `include_tool_parts_in_conversation=True`，但该类的 `__init__` 没有接收这个参数，也没有接收 `split_long_text_messages_for_extraction` 参数。每次触发 compaction 都直接 TypeError，完全没执行就炸了。
+`assemblePassthrough` 函数在 12 条 fallback 路径（OV server 超时/500/session_not_found/auto_recall_disabled 等）被调用时，原封不动返回全量 `liveMessages`，不做任何 token budget 截断。当累积消息接近 `maxActiveTranscriptBytes: 1MB` 时，大模型直接报上下文溢出。
 
-注意：这两个参数虽然已定义为 class attributes（默认值），但未在 `__init__` 中声明接收，导致调用方传参时报错。修复后在 `__init__` 中接收并赋值，保持向后兼容（默认值不变）。
+## Fix
+- 新增 `MAX_FALLBACK_TOKENS = 200_000` 硬上限
+- 新增 `safeFallbackTruncate` 函数：按 `min(tokenBudget, MAX_FALLBACK_TOKENS)` 做消息截断（从头部逐条丢弃）
+- 修改 `assemblePassthrough` 签名：接收 `roughEstimate`/`tokenBudget`/`logger` → 调用 `safeFallbackTruncate` 后再返回
+- 更新所有 12 个 `assemblePassthrough` 调用点 + catch 块最后一条 fallback，全部传入截断所需参数
+- 总计改动 ~50 lines
 
 ## Affected Versions
-- OV 0.4.8: 已存在此 bug
-- OV 0.4.9: 仍存在
-- OV 0.4.5: 未确认（compressor_v3.py 不存在）
+- OV Plugin bundled with OpenClaw v2026.7.1（本次修复针对此版本）
+- 0.4.8 及更早版本的 plugin 也存在此问题
 
 ## Changed File
-`server/openviking/session/memory/session_extract_context_provider.py`
-
-## Lines Changed
-在 `__init__` 签名中加入两个参数 + 在 body 中赋值：+4 lines
+`plugin/openviking-plugin/services/context-lifecycle-service.ts`
 
 ## Verification
-修复后 OV server 重启，compaction 不再抛 TypeError。
+修复后，fallback 时刻消息被截断至 ≤200k tokens，不再溢出。

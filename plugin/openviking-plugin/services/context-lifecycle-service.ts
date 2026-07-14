@@ -383,27 +383,59 @@ export async function commitOpenVikingSession({
   }
 }
 
+const MAX_FALLBACK_TOKENS = 200_000;
+
+function safeFallbackTruncate(
+  messages: AgentMessage[],
+  tokenBudget: number,
+  roughEstimate: (messages: AgentMessage[]) => number,
+  logger: ContextEngineLifecycleLogger,
+): { messages: AgentMessage[]; estimatedTokens: number } {
+  const estimated = roughEstimate(messages);
+  const cap = Math.min(tokenBudget, MAX_FALLBACK_TOKENS);
+  if (estimated <= cap || messages.length <= 1) {
+    return { messages, estimatedTokens: estimated };
+  }
+  let truncated = [...messages];
+  while (truncated.length > 1 && roughEstimate(truncated) > cap) {
+    truncated = truncated.slice(1);
+  }
+  const truncatedTokens = roughEstimate(truncated);
+  logger.warn?.(
+    `openviking: fallback truncated ${messages.length}→${truncated.length} messages, ` +
+      `${estimated}→${truncatedTokens} tokens (cap=${cap}, budget=${tokenBudget})`,
+  );
+  return { messages: truncated, estimatedTokens: truncatedTokens };
+}
+
 function assemblePassthrough(
-  params: Pick<AssembleOpenVikingSessionParams, "diag"> & {
+  params: Pick<AssembleOpenVikingSessionParams, "diag" | "roughEstimate" | "logger"> & {
     ovSessionId: string;
     reason: string;
     liveMessages: AgentMessage[];
     originalTokens: number;
+    tokenBudget: number;
     extra?: Record<string, unknown>;
   },
 ): AssembleOpenVikingSessionResult {
-  const { diag, ovSessionId, reason, liveMessages, originalTokens, extra } = params;
+  const { diag, ovSessionId, reason, liveMessages, originalTokens, extra, roughEstimate, tokenBudget, logger } = params;
+  const { messages: safe, estimatedTokens } = safeFallbackTruncate(
+    liveMessages,
+    tokenBudget,
+    roughEstimate,
+    logger,
+  );
   diag("assemble_result", ovSessionId, {
     passthrough: true,
     reason,
-    outputMessagesCount: liveMessages.length,
+    outputMessagesCount: safe.length,
     inputTokenEstimate: originalTokens,
-    estimatedTokens: originalTokens,
-    tokensSaved: 0,
-    savingPct: 0,
+    estimatedTokens,
+    tokensSaved: originalTokens - estimatedTokens,
+    savingPct: originalTokens > 0 ? Math.round(((originalTokens - estimatedTokens) / originalTokens) * 100) : 0,
     ...extra,
   });
-  return { messages: liveMessages, estimatedTokens: originalTokens };
+  return { messages: safe, estimatedTokens };
 }
 
 function isSessionNotFoundError(err: unknown): boolean {
@@ -456,7 +488,7 @@ export async function assembleOpenVikingSession({
   });
 
   if (isBypassedSession({ sessionId, sessionKey })) {
-    return assemblePassthrough({ diag, ovSessionId, reason: "session_bypassed", liveMessages: messages, originalTokens });
+    return assemblePassthrough({ diag, ovSessionId, reason: "session_bypassed", liveMessages: messages, originalTokens, roughEstimate, tokenBudget, logger });
   }
 
   if (isTransformContextAssemble) {
@@ -467,19 +499,22 @@ export async function assembleOpenVikingSession({
         reason: "transform_context_non_user_tail",
         liveMessages: messages,
         originalTokens,
+        roughEstimate,
+        tokenBudget,
+        logger,
         extra: { latestRole: latestMessage?.role ?? null },
       });
     }
     if (!cfg.autoRecall) {
-      return assemblePassthrough({ diag, ovSessionId, reason: "transform_context_auto_recall_disabled", liveMessages: messages, originalTokens });
+      return assemblePassthrough({ diag, ovSessionId, reason: "transform_context_auto_recall_disabled", liveMessages: messages, originalTokens, roughEstimate, tokenBudget, logger });
     }
     if (hasAutoRecallBlock(latestMessage)) {
-      return assemblePassthrough({ diag, ovSessionId, reason: "transform_context_recall_already_injected", liveMessages: messages, originalTokens });
+      return assemblePassthrough({ diag, ovSessionId, reason: "transform_context_recall_already_injected", liveMessages: messages, originalTokens, roughEstimate, tokenBudget, logger });
     }
 
     const recallQuery = prepareRecallQuery(extractAgentMessageText(latestMessage));
     if (!recallQuery.query || recallQuery.query.length < 5) {
-      return assemblePassthrough({ diag, ovSessionId, reason: "transform_context_empty_recall_query", liveMessages: messages, originalTokens });
+      return assemblePassthrough({ diag, ovSessionId, reason: "transform_context_empty_recall_query", liveMessages: messages, originalTokens, roughEstimate, tokenBudget, logger });
     }
     if (recallQuery.truncated) {
       logger.info(
@@ -521,6 +556,9 @@ export async function assembleOpenVikingSession({
           reason: "transform_context_no_recall_hits",
           liveMessages: messages,
           originalTokens,
+          roughEstimate,
+          tokenBudget,
+          logger,
           extra: { memoryCount: recall.memoryCount },
         });
       }
@@ -546,6 +584,9 @@ export async function assembleOpenVikingSession({
         reason: "transform_context_recall_failed",
         liveMessages: messages,
         originalTokens,
+        roughEstimate,
+        tokenBudget,
+        logger,
         extra: { error: String(err) },
       });
     }
@@ -568,6 +609,9 @@ export async function assembleOpenVikingSession({
         reason: "no_ov_data",
         liveMessages: messages,
         originalTokens,
+        roughEstimate,
+        tokenBudget,
+        logger,
         extra: { archiveCount: 0, activeCount: 0 },
       });
     }
@@ -578,6 +622,9 @@ export async function assembleOpenVikingSession({
         reason: "ov_msgs_fewer_than_input",
         liveMessages: messages,
         originalTokens,
+        roughEstimate,
+        tokenBudget,
+        logger,
         extra: { archiveCount: 0, activeCount },
       });
     }
@@ -599,6 +646,9 @@ export async function assembleOpenVikingSession({
         reason: "sanitized_empty",
         liveMessages: messages,
         originalTokens,
+        roughEstimate,
+        tokenBudget,
+        logger,
         extra: { archiveCount: preAbstracts.length, activeCount },
       });
     }
@@ -644,6 +694,9 @@ export async function assembleOpenVikingSession({
         reason: "session_not_found",
         liveMessages: messages,
         originalTokens,
+        roughEstimate,
+        tokenBudget,
+        logger,
         extra: {
           error: errorMessage,
           tokenBudget,
@@ -664,7 +717,13 @@ export async function assembleOpenVikingSession({
       senderIdFound: sender.found,
       senderId: sender.senderId ?? null,
     });
-    return { messages, estimatedTokens: roughEstimate(messages) };
+    const { messages: safeMessages, estimatedTokens: safeTokens } = safeFallbackTruncate(
+      messages,
+      tokenBudget,
+      roughEstimate,
+      logger,
+    );
+    return { messages: safeMessages, estimatedTokens: safeTokens };
   }
 }
 
