@@ -67,6 +67,8 @@ class SessionExtractContextProvider(ExtractContextProvider):
         ctx: RequestContext = None,
         viking_fs: VikingFS = None,
         transaction_handle=None,
+        include_tool_parts_in_conversation: bool = False,
+        split_long_text_messages_for_extraction: bool = True,
     ):
         self.messages = list(messages) if isinstance(messages, list) else messages
         self.latest_archive_overview = latest_archive_overview
@@ -85,6 +87,8 @@ class SessionExtractContextProvider(ExtractContextProvider):
         self._transaction_handle = transaction_handle
         self._link_enabled = config.memory.link_enabled if config.memory else False
         self._vision_messages_prepared = False
+        self.include_tool_parts_in_conversation = include_tool_parts_in_conversation
+        self.split_long_text_messages_for_extraction = split_long_text_messages_for_extraction
         self._vision_vlm = None
 
     @property
