@@ -1,5 +1,5 @@
 --- a/openviking/session/session.py	2026-07-14 09:21:16.196228882 +0800
-+++ b/openviking/session/session.py	2026-07-14 09:15:12.866665484 +0800
++++ b/openviking/session/session.py	2026-07-14 09:55:08.295577264 +0800
 @@ -1441,6 +1441,17 @@
                              extraction_labels.append("archive_summary")
  

@@ -1,5 +1,5 @@
 --- a/openviking/service/reindex_executor.py	2026-07-14 09:21:16.193228777 +0800
-+++ b/openviking/service/reindex_executor.py	2026-07-14 09:18:16.491988876 +0800
++++ b/openviking/service/reindex_executor.py	2026-07-14 09:55:08.296577301 +0800
 @@ -104,12 +104,12 @@
      """Non-destructive reindex orchestration for admin maintenance flows."""
  

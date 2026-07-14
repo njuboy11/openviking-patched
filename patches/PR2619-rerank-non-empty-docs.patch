@@ -1,5 +1,5 @@
---- a/openviking/models/rerank/openai_rerank.py	2026-07-14 09:21:16.183228429 +0800
-+++ b/openviking/models/rerank/openai_rerank.py	2026-07-14 09:15:12.853665038 +0800
+--- a/openviking/models/rerank/openai_rerank.py	2026-07-14 09:56:20.779211889 +0800
++++ b/openviking/models/rerank/openai_rerank.py	2026-07-14 09:55:08.292577155 +0800
 @@ -67,10 +67,28 @@
          if not documents:
              return []
@@ -46,14 +46,16 @@
 -            if len(results) != len(documents):
 +            if len(results) != len(non_empty_docs):
                  logger.warning(
-                     "[OpenAIRerankClient] Unexpected rerank result length: expected=%s actual=%s",
+-                    "[OpenAIRerankClient] Sparse rerank results: expected=%s actual=%s",
 -                    len(documents),
++                    "[OpenAIRerankClient] Unexpected rerank result length: expected=%s actual=%s",
 +                    len(non_empty_docs),
                      len(results),
                  )
-                 return None
++                return None
  
--            # Results may not be in original order — sort by index
+-            # Results may be sparse or out of order. Missing documents keep a
+-            # zero score while returned scores map back to their input indexes.
 +            # Map API results (indexed against non_empty_docs) back to original indices
              scores = [0.0] * len(documents)
              for item in results:

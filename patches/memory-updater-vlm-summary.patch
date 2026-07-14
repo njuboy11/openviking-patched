@@ -1,5 +1,5 @@
 --- a/openviking/session/memory/memory_updater.py	2026-07-14 09:21:16.194228812 +0800
-+++ b/openviking/session/memory/memory_updater.py	2026-07-14 09:18:16.492988911 +0800
++++ b/openviking/session/memory/memory_updater.py	2026-07-14 09:55:08.297577337 +0800
 @@ -1266,7 +1266,9 @@
                  mf = MemoryFileUtils.read(content, uri=uri)
                  from openviking.session.memory.utils.link_renderer import LinkRenderer
