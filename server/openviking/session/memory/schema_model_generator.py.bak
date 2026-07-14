@@ -268,11 +268,15 @@ class SchemaModelGenerator:
         # so excluding this field prevents the LLM from hallucinating fake deletes.
         has_deletable_schema = any(mt.operation_mode != "add_only" for mt in enabled_memory_types)
         if has_deletable_schema:
-            field_definitions["delete_uris"] = (
-                List[str],
+            field_definitions["delete_ids"] = (
+                List[DeleteId],
                 Field(
                     default_factory=list,
-                    description="Delete operations as URI strings",
+                    description=(
+                        "Delete operations by page_id. Each item has delete_page_id and "
+                        "replacement_page_id; set replacement_page_id to null for a pure delete, "
+                        "or to the canonical replacement page_id so existing links/backlinks are inherited."
+                    ),
                 ),
             )
 
@@ -313,7 +317,7 @@ class SchemaModelGenerator:
                     else:
                         # Single value (not None)
                         return False
-            return len(getattr(self, "delete_uris", [])) == 0
+            return len(getattr(self, "delete_ids", [])) == 0
 
         def to_legacy_operations(self) -> Dict[str, Any]:
             """Convert new per-type structure to legacy write_uris/edit_uris format."""
@@ -339,7 +343,7 @@ class SchemaModelGenerator:
             return {
                 "write_uris": write_uris,
                 "edit_uris": edit_uris,
-                "delete_uris": self.delete_uris,
+                "delete_ids": self.delete_ids,
             }
 
         # Attach methods
