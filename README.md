@@ -5,49 +5,41 @@
 ## 仓库结构
 
 ```
-server/openviking/   → 完整服务端代码（v0.4.8 + 全部 patch 已打入）
+server/openviking/   → 完整服务端代码（v0.4.8 + 补丁已打入）
 plugin/openviking-plugin/ → OpenClaw 插件代码
-patches/             → 独立 .patch 文件，每个修复一个
+patches/             → 独立 .patch 文件
 ```
 
-## 本地补丁清单
+## 当前生效补丁
 
-### 近期活跃 PR（2026-07-10 ~ 07-12 提的）
+| patch | 文件 | 修复内容 |
+|-------|------|----------|
+| `models-rerank-openai_rerank.py.patch` | `models/rerank/openai_rerank.py` | PR #2619 — Rerank 过滤空文档，防止 OpenAI API 400 |
 
-| PR | 文件 | 修复内容 |
-|----|------|----------|
-| [#3135](https://github.com/volcengine/OpenViking/pull/3135) | `hierarchical_retriever.py` | 恢复 L2 文档级召回命中（0.4.7 回归导致结果少 90%） |
-| [#3137](https://github.com/volcengine/OpenViking/pull/3137) | `session.py` | abstract 提取跳过 markdown 标题，返回真实文本 |
-| [#3143](https://github.com/volcengine/OpenViking/pull/3143) | `memory_updater.py` | Qdrant abstract 用 VLM 生成的 summary 而非全文 |
-| [#3172](https://github.com/volcengine/OpenViking/pull/3172) | `session.py` | extract 阶段用 Role.ROOT 绕过 trusted 模式 peer 隔离 |
-| [#N/A](https://github.com/njuboy11/openviking-patched) | `context-lifecycle-service.js` | assemble fallback 加 token 预算裁剪（20%），防 context overflow |
-| [#N/A](https://github.com/njuboy11/openviking-patched) | `schema_model_generator.py` | summary 字段强制 required，VLM 每次必须生成 |
-| [#N/A](https://github.com/njuboy11/openviking-patched) | `*.yaml` (10 个模板) | 移除 summary 描述中的 "Keep within 500 characters" |
+## 服务端基线
 
-### 早期补丁（已在本地生效，上游 Open 或已关）
+| 版本 | 说明 |
+|------|------|
+| v0.4.8 | pip 安装基线（已包含 PR #3135 / #3137 / #3143 / #3172 等上游合入项） |
+| PR #2619 | 本地 patch，上游仍未合入，需持续维护 |
 
-| PR | 文件 | 修复内容 |
-|----|------|----------|
-| [#2476](https://github.com/volcengine/OpenViking/pull/2476) | `session.py` | 强制 commit 跳过卡死的 archive |
-| [#2619](https://github.com/volcengine/OpenViking/pull/2619) | `openai_rerank.py` | rerank 前过滤空文档 |
-| [#2753](https://github.com/volcengine/OpenViking/pull/2753) | `logger.py` | StreamHandler → QueueHandler 防死锁 |
-| [#2927](https://github.com/volcengine/OpenViking/pull/2927) | `viking_fs.py` | `read_batch` 并发 via `asyncio.gather` |
+## 插件基线
 
-### 上游已合入（v0.4.8 已包含）
+| 版本 | 说明 |
+|------|------|
+| 2026.7.11 | OpenClaw bundled 插件，与本地 `/root/.openclaw/extensions/openviking/` 完全一致 |
 
-- [#2748](https://github.com/volcengine/OpenViking/issues/2748) — 全局 `str(ctx.role)` 替换（9 个文件）
-- [#2481](https://github.com/volcengine/OpenViking/pull/2481) — Plugin: 结构化 toolCall 替换文本占位符
-- [#2491](https://github.com/volcengine/OpenViking/pull/2491) — Plugin: 合并并发 auto-recall 调用
+## 历史废弃补丁（已回滚删除）
 
-## 应用补丁（升级后恢复）
+以下补丁曾应用于 v0.4.5 时期，升级到 v0.4.8 后已由上游原生支持，不再需要：
 
-```bash
-cd /usr/local/lib/python3.12/dist-packages/openviking
-for p in patches/*.patch; do
-  patch -p1 < $p
-done
-```
+- 10 个 memory template yaml 补丁（`prompts/templates/memory/*.yaml`）
+- `schema_model_generator-summary-required.patch`
+- `session-memory-memory_updater.py.patch`
+- `plugin-context-lifecycle-fallback-token-budget.patch`
 
-## License
+## 同步规则
 
-同上游 OpenViking。
+- 本地 OV 服务端 = 仓库 server/ 目录（单向同步：本地 → 仓库）
+- 本地 OV 插件 = 仓库 plugin/ 目录（单向同步：本地 → 仓库）
+- patches/ 目录只保留本地实际在用的补丁

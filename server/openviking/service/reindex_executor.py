@@ -104,12 +104,12 @@ class ReindexExecutor:
     """Non-destructive reindex orchestration for admin maintenance flows."""
 
     SUPPORTED_MODES_BY_TYPE = {
-        "global_namespace": {"vectors_only", "semantic_and_vectors"},
-        "user_namespace": {"vectors_only", "semantic_and_vectors"},
-        "skill_namespace": {"vectors_only", "semantic_and_vectors"},
-        "resource": {"vectors_only", "semantic_and_vectors"},
-        "skill": {"vectors_only", "semantic_and_vectors"},
-        "memory": {"vectors_only", "semantic_and_vectors"},
+        "global_namespace": {"vectors_only", "semantic_and_vectors", "vectors_l2_only"},
+        "user_namespace": {"vectors_only", "semantic_and_vectors", "vectors_l2_only"},
+        "skill_namespace": {"vectors_only", "semantic_and_vectors", "vectors_l2_only"},
+        "resource": {"vectors_only", "semantic_and_vectors", "vectors_l2_only"},
+        "skill": {"vectors_only", "semantic_and_vectors", "vectors_l2_only"},
+        "memory": {"vectors_only", "semantic_and_vectors", "vectors_l2_only"},
     }
 
     async def execute(
@@ -411,6 +411,7 @@ class ReindexExecutor:
                     counters=counters,
                     lock=BorrowedLockLease.from_handle(get_lock_manager(), lock_handle),
                 )
+                self._skip_l0_l1 = (mode == "vectors_l2_only")
                 if object_type == "global_namespace":
                     await self._reindex_global_namespace(
                         uri=uri,
@@ -651,6 +652,8 @@ class ReindexExecutor:
                 deduped_files.append(file_uri)
                 seen_files.add(file_uri)
 
+        if self._skip_l0_l1:
+            deduped_directories = []
         for directory_uri in deduped_directories:
             if directory_uri == "viking://":
                 continue
@@ -961,6 +964,31 @@ class ReindexExecutor:
         viking_fs = get_viking_fs()
         counters.scanned_records += 1
 
+        if self._skip_l0_l1:
+            # vectors_l2_only: skip directory-level L0/L1, go straight to SKILL.md L2
+            skill_file_uri = f"{uri}/SKILL.md"
+            if await viking_fs.exists(skill_file_uri, ctx=ctx):
+                counters.scanned_records += 1
+                skill_content = await self._safe_read_text(skill_file_uri, ctx=ctx)
+                if skill_content:
+                    parent_uri = VikingURI(uri).parent.uri
+                    try:
+                        await self._upsert_context(
+                            uri=skill_file_uri,
+                            parent_uri=parent_uri,
+                            abstract=skill_content[:200],
+                            vector_text=skill_content,
+                            is_leaf=True,
+                            context_type=ContextType.SKILL.value,
+                            level=ContextLevel.DETAIL,
+                            ctx=ctx,
+                        )
+                        counters.rebuilt_records += 1
+                    except Exception as exc:
+                        counters.failed_records += 1
+                        counters.warnings.append(f"Failed to reindex {skill_file_uri} vector: {exc}")
+            return
+
         abstract = await self._read_directory_abstract(uri, ctx=ctx)
         overview = await self._read_directory_overview(uri, ctx=ctx)
         if not abstract:
@@ -1099,11 +1127,12 @@ class ReindexExecutor:
                     entry_uri = entry.get("uri")
                     if entry_uri and entry.get("isDir"):
                         directory_uris.add(entry_uri)
-                await self._reindex_memory_directory_chain(
-                    directory_uris=sorted(directory_uris),
-                    counters=counters,
-                    ctx=ctx,
-                )
+                if not self._skip_l0_l1:
+                    await self._reindex_memory_directory_chain(
+                        directory_uris=sorted(directory_uris),
+                        counters=counters,
+                        ctx=ctx,
+                    )
                 file_uris = [entry["uri"] for entry in entries if not entry.get("isDir")]
             else:
                 file_uris = [uri]

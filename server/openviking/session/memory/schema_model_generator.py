@@ -128,10 +128,8 @@ class SchemaModelGenerator:
         # Add business fields from schema
         for field in memory_type.fields:
             base_type = self._map_field_type(field.field_type)
-            if field.merge_op == MergeOp.IMMUTABLE or field.name == "summary":
-                # Immutable fields / summary field: only base type, required
-                # (summary is always required so VLM must generate it, even though
-                #  it can be updated via PATCH merge on upsert)
+            if field.merge_op == MergeOp.IMMUTABLE:
+                # Immutable fields: only base type, required
                 field_definitions[field.name] = (
                     base_type,
                     Field(..., description=self._render_description(field.description)),
