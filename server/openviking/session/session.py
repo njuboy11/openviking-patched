@@ -1341,7 +1341,7 @@ class Session:
                                 "(memory_policy.working_memory.enabled=false)"
                             )
                             return
-                        summary = await self._generate_archive_summary_async(
+                        summary = self._generate_archive_summary(
                             extraction_messages,
                             latest_archive_overview=latest_archive_overview,
                         )
