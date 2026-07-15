@@ -54,7 +54,7 @@ class MemoryPolicy:
     """Effective memory policy for one commit."""
 
     self_enabled: bool = True
-    peer_enabled: bool = False
+    peer_enabled: bool = True
     memory_types: Optional[set[str]] = None
     working_memory_enabled: bool = True
 

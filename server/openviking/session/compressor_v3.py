@@ -133,6 +133,7 @@ class SessionCompressorV3:
             ctx=ctx,
             viking_fs=viking_fs,
             transaction_handle=transaction_handle,
+            include_tool_parts_in_conversation=True,
         )
         return ExtractLoop(
             vlm=vlm,
