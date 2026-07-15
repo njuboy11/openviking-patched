@@ -137,11 +137,12 @@ Output format requirements:
 ```json
 {schema_str}
 ```
+
+你只能输出标准JSON，禁止任何解释文字、前言、markdown、换行注释，直接返回可JSON.parse的纯JSON字符串。
 """
     if description:
         prompt += f"\n{description}\n"
 
-    prompt += "\nOnly output JSON, no other text."
     return prompt
 
 
