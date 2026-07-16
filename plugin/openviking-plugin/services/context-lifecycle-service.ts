@@ -3,7 +3,13 @@ import { DEFAULT_PHASE2_POLL_TIMEOUT_MS, type OpenVikingClient, type OVMessage }
 import type { EffectiveQueryConfig } from "../query-config.js";
 import { buildAutoRecallContext, prepareRecallQuery } from "../auto-recall.js";
 import { toJsonLog } from "../memory-ranking.js";
-import { openClawSessionToOvStorageId } from "../routing/identity-routing.js";
+import {
+  openClawSessionToOvStorageId,
+  resolveOpenVikingActorPeerId,
+  resolveOpenVikingMessagePeerId,
+  sanitizeOpenVikingPeerId,
+  type OpenVikingPeerRole,
+} from "../routing/identity-routing.js";
 import { extractNewTurnMessages } from "../text-utils.js";
 import { estimateAgentMessageTokens, estimateTextTokens } from "../token-estimator.js";
 import {
@@ -26,7 +32,6 @@ export type CommitOpenVikingSessionParams = {
   sessionKey?: string;
   getClient: () => Promise<Pick<OpenVikingClient, "commitSession">>;
   logger: ContextEngineLifecycleLogger;
-  resolveAgentId: (sessionId: string, sessionKey?: string, ovSessionId?: string) => string;
   rememberSessionAgentId?: (ctx: {
     agentId?: string;
     sessionId?: string;
@@ -131,6 +136,7 @@ export type AfterTurnOpenVikingSessionParams = {
     commitTokenThresholdRatio: number;
     commitKeepRecentCount: number;
     logFindRequests: boolean;
+    peer_role?: OpenVikingPeerRole;
   };
   getClient: () => Promise<AfterTurnClient>;
   logger: ContextEngineLifecycleLogger;
@@ -163,6 +169,7 @@ const ARCHIVE_BUDGET_RATIO = 0.15;
 const ARCHIVE_BUDGET_CAP = 8_000;
 const RESERVED_MIN = 20_000;
 const RESERVED_RATIO = 0.15;
+const MAX_FALLBACK_TOKENS = 200_000;
 const PHASE2_POLL_INTERVAL_MS = 800;
 const PHASE2_POLL_MAX_MS = DEFAULT_PHASE2_POLL_TIMEOUT_MS;
 
@@ -177,7 +184,6 @@ function sleep(ms: number): Promise<void> {
 async function pollPhase2ExtractionOutcome(
   client: AfterTurnClient,
   taskId: string,
-  agentId: string,
   logger: ContextEngineLifecycleLogger,
   sessionLabel: string,
 ): Promise<void> {
@@ -185,7 +191,7 @@ async function pollPhase2ExtractionOutcome(
   try {
     while (Date.now() < deadline) {
       await sleep(PHASE2_POLL_INTERVAL_MS);
-      const task = await client.getTask(taskId, agentId).catch((e) => {
+      const task = await client.getTask(taskId).catch((e) => {
         logger.warn?.(`openviking: phase2 getTask failed task_id=${taskId}: ${String(e)}`);
         return null;
       });
@@ -340,7 +346,6 @@ export async function commitOpenVikingSession({
   sessionKey,
   getClient,
   logger,
-  resolveAgentId,
   rememberSessionAgentId,
   isBypassedSession,
 }: CommitOpenVikingSessionParams): Promise<boolean> {
@@ -358,10 +363,8 @@ export async function commitOpenVikingSession({
       sessionKey,
       ovSessionId: ovId,
     });
-    const agentId = resolveAgentId(sessionId, sessionKey, ovId);
     const commitResult = await client.commitSession(ovId, {
       wait: true,
-      agentId,
       keepRecentCount: 0,
     });
     const memCount = totalExtractedMemories(commitResult.memories_extracted);
@@ -383,8 +386,6 @@ export async function commitOpenVikingSession({
   }
 }
 
-const MAX_FALLBACK_TOKENS = 200_000;
-
 function safeFallbackTruncate(
   messages: AgentMessage[],
   tokenBudget: number,
@@ -402,8 +403,8 @@ function safeFallbackTruncate(
   }
   const truncatedTokens = roughEstimate(truncated);
   logger.warn?.(
-    `openviking: fallback truncated ${messages.length}→${truncated.length} messages, ` +
-      `${estimated}→${truncatedTokens} tokens (cap=${cap}, budget=${tokenBudget})`,
+    `openviking: fallback truncated ${messages.length}\u2192${truncated.length} messages, ` +
+      `${estimated}\u2192${truncatedTokens} tokens (cap=${cap}, budget=${tokenBudget})`,
   );
   return { messages: truncated, estimatedTokens: truncatedTokens };
 }
@@ -527,6 +528,11 @@ export async function assembleOpenVikingSession({
       const client = await getClient();
       const routingRef = sessionId ?? sessionKey ?? ovSessionId;
       const agentId = resolveAgentId(routingRef, sessionKey, ovSessionId);
+      const actorPeerId = resolveOpenVikingActorPeerId({
+        peerRole: cfg.peer_role ?? "assistant",
+        personPeerId: sanitizeOpenVikingPeerId(sender.senderId),
+        assistantPeerId: agentId,
+      });
       const queryConfig = await queryConfigStore?.getEffective({
         agentId,
         sessionId,
@@ -538,6 +544,7 @@ export async function assembleOpenVikingSession({
         queryConfig,
         client,
         agentId,
+        actorPeerId,
         queryText: recallQuery.query,
         logger,
         verbose: (message) => logger.info(message),
@@ -556,9 +563,9 @@ export async function assembleOpenVikingSession({
           reason: "transform_context_no_recall_hits",
           liveMessages: messages,
           originalTokens,
-          roughEstimate,
-          tokenBudget,
-          logger,
+        roughEstimate,
+        tokenBudget,
+        logger,
           extra: { memoryCount: recall.memoryCount },
         });
       }
@@ -594,9 +601,7 @@ export async function assembleOpenVikingSession({
 
   try {
     const client = await getClient();
-    const routingRef = sessionId ?? sessionKey ?? ovSessionId;
-    const agentId = resolveAgentId(routingRef, sessionKey, ovSessionId);
-    const ctx = await client.getSessionContext(ovSessionId, tokenBudget, agentId);
+    const ctx = await client.getSessionContext(ovSessionId, tokenBudget);
 
     const preAbstracts = ctx?.pre_archive_abstracts ?? [];
     const hasArchives = !!ctx?.latest_archive_overview || preAbstracts.length > 0;
@@ -958,14 +963,19 @@ export async function afterTurnOpenVikingSession({
           ovSessionId,
           msg.role,
           ovParts,
-          agentId,
+          undefined,
           createdAt,
-          msg.role === "user" ? senderRoleId : undefined,
+          resolveOpenVikingMessagePeerId({
+            peerRole: cfg.peer_role ?? "assistant",
+            role: msg.role,
+            personPeerId: senderRoleId,
+            assistantPeerId: agentId,
+          }),
         );
       }
     }
 
-    const session = await client.getSession(ovSessionId, agentId);
+    const session = await client.getSession(ovSessionId);
     const pendingTokens = session.pending_tokens ?? 0;
 
     const commitTokenThreshold = Math.floor(tokenBudget * cfg.commitTokenThresholdRatio);
@@ -985,7 +995,6 @@ export async function afterTurnOpenVikingSession({
 
     const commitResult = await client.commitSession(ovSessionId, {
       wait: false,
-      agentId,
       keepRecentCount: cfg.commitKeepRecentCount,
     });
     logger.info(
@@ -1011,7 +1020,7 @@ export async function afterTurnOpenVikingSession({
         `openviking: Phase2 memory extraction runs asynchronously on the server (task_id=${commitResult.task_id}). ` +
           "memories_extracted appears only after that task completes — not in this immediate response.",
       );
-      void pollPhase2ExtractionOutcome(client, commitResult.task_id, agentId, logger, ovSessionId);
+      void pollPhase2ExtractionOutcome(client, commitResult.task_id, logger, ovSessionId);
     }
   } catch (err) {
     logger.warn?.(`openviking: afterTurn failed: ${String(err)}`);
@@ -1092,7 +1101,7 @@ export async function compactOpenVikingSession({
   let preCommitEstimatedTokens: number | undefined;
   if (typeof tokensBeforeOriginal !== "number") {
     try {
-      const preCtx = await client.getSessionContext(ovSessionId, tokenBudget, agentId);
+      const preCtx = await client.getSessionContext(ovSessionId, tokenBudget);
       if (typeof preCtx.estimatedTokens === "number" && Number.isFinite(preCtx.estimatedTokens)) {
         preCommitEstimatedTokens = preCtx.estimatedTokens;
       }
@@ -1112,7 +1121,6 @@ export async function compactOpenVikingSession({
     );
     const commitResult = await client.commitSession(ovSessionId, {
       wait: true,
-      agentId,
       keepRecentCount: 0,
     });
     const memCount = totalExtractedMemories(commitResult.memories_extracted);
@@ -1188,7 +1196,7 @@ export async function compactOpenVikingSession({
     let contextFetchError: string | undefined;
 
     try {
-      const ctx = await client.getSessionContext(ovSessionId, tokenBudget, agentId);
+      const ctx = await client.getSessionContext(ovSessionId, tokenBudget);
       logger.info(
         `openviking: compact getSessionContext raw result for ${ovSessionId}: ` +
           JSON.stringify(ctx, null, 2),

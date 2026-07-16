@@ -1273,6 +1273,8 @@ class Session:
         first_message_id: str,
         last_message_id: str,
         memory_policy: Optional[Dict[str, Any]],
+        *,
+        skip_previous_archive_check: bool = False,
     ) -> None:
         """Phase 2: Extract memories, write relations, enqueue — runs in background."""
         import uuid
@@ -1297,7 +1299,8 @@ class Session:
         redo_log = lock_manager.redo_log
 
         try:
-            await self._wait_for_previous_archive_done(archive_index)
+            if not skip_previous_archive_check:
+                await self._wait_for_previous_archive_done(archive_index)
 
             await tracker.start(
                 task_id,
@@ -2024,6 +2027,77 @@ class Session:
                 continue
 
         return messages
+
+    async def retry_archive_extraction(
+        self, archive_index: int
+    ) -> Dict[str, Any]:
+        """Retry Phase 2 memory extraction for a failed archive.
+
+        Reads archived messages from messages.jsonl, deletes .failed.json,
+        and re-runs _run_memory_extraction in the background.
+
+        Args:
+            archive_index: Numeric archive index (e.g. 4 for archive_004)
+
+        Returns:
+            Dict with status, task_id, archive_uri, message_count
+        """
+        from openviking.service.task_tracker import get_task_tracker
+
+        archive_uri = f"{self._session_uri}/history/archive_{archive_index:03d}"
+
+        # 1. Read archived messages
+        messages = await self._read_archive_messages(archive_uri)
+        if not messages:
+            raise ValueError(f"No messages found in archive at {archive_uri}")
+
+        # 2. Delete .failed.json to reset state (use os.remove for reliability)
+        import os
+        failed_path = os.path.join(
+            "/root/.openviking/data/viking/default/user/main/sessions",
+            self.session_id,
+            "history",
+            f"archive_{archive_index:03d}",
+            ".failed.json",
+        )
+        if os.path.exists(failed_path):
+            os.remove(failed_path)
+            logger.info(f"[retry] Deleted .failed.json: {failed_path}")
+        else:
+            logger.info(f"[retry] .failed.json already removed: {failed_path}")
+
+        # 3. Create task and run Phase 2 in background
+        task_id = str(uuid4())
+        tracker = get_task_tracker()
+        await tracker.create(
+            "archive_retry",
+            resource_id=f"{self.session_id}:archive_{archive_index:03d}",
+            account_id=self.ctx.account_id,
+            user_id=self.ctx.user.user_id,
+        )
+
+        logger.info(
+            f"[retry] Background Phase 2 started for {archive_uri} ({len(messages)} messages)"
+        )
+        asyncio.create_task(
+            self._run_memory_extraction(
+                task_id=task_id,
+                archive_uri=archive_uri,
+                messages=messages,
+                usage_records=[],
+                first_message_id=messages[0].id,
+                last_message_id=messages[-1].id,
+                memory_policy=None,
+                skip_previous_archive_check=True,
+            )
+        )
+
+        return {
+            "status": "retrying",
+            "task_id": task_id,
+            "archive_uri": archive_uri,
+            "message_count": len(messages),
+        }
 
     async def _get_latest_completed_archive_summary(
         self,
