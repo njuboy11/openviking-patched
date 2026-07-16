@@ -1,0 +1,11 @@
+--- /tmp/clone_pre.ts	2026-07-16 18:20:43.086575877 +0800
++++ plugin/openviking-plugin/auto-recall.ts	2026-07-16 18:20:43.087575911 +0800
+@@ -216,7 +216,7 @@
+     "<relevant-memories>",
+     AUTO_RECALL_SOURCE_MARKER,
+     "The following OpenViking memories may be relevant:",
+-    ...memoryLines,
++    memoryLines.join("\n\n"),
+     "</relevant-memories>",
+   ].join("\n");
+ }

@@ -216,7 +216,7 @@ export function buildRecallContextBlock(memoryLines: string[]): string {
     "<relevant-memories>",
     AUTO_RECALL_SOURCE_MARKER,
     "The following OpenViking memories may be relevant:",
-    ...memoryLines,
+    memoryLines.join("\n\n"),
     "</relevant-memories>",
   ].join("\n");
 }
