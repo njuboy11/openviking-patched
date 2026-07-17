@@ -166,11 +166,29 @@ class MemoryIsolationHandler:
 
     def _range_targets(self, ranges: Any) -> List[str]:
         if not ranges or not self._extract_context:
+            # LLM emitted an event/trajectory op without a `ranges` value (None, "", or missing).
+            # This is the most common path to "missing resolved URIs" - log enough context
+            # so we can correlate the warning back to the LLM call that produced it.
+            try:
+                msg_count = len(getattr(self._extract_context, "messages", []) or [])
+            except Exception:
+                msg_count = -1
+            logger.warning(
+                "_range_targets: empty/invalid ranges, returning [] (ranges=%r, msg_count=%d, "
+                "has_extract_context=%s)",
+                ranges,
+                msg_count,
+                bool(self._extract_context),
+            )
             return []
         try:
             msg_range = self._extract_context.read_message_ranges(str(ranges))
-        except Exception:
-            logger.warning("Failed to parse memory ranges for peer memory: %s", ranges)
+        except Exception as exc:
+            logger.warning(
+                "_range_targets: read_message_ranges raised %s for ranges=%r",
+                type(exc).__name__,
+                ranges,
+            )
             return []
 
         target_ids = []
@@ -179,6 +197,22 @@ class MemoryIsolationHandler:
                 target_id = self._message_target_id(msg)
                 if target_id:
                     target_ids.append(target_id)
+        if not target_ids:
+            # Parsed successfully but yielded zero target ids - usually means every
+            # range was filtered out (e.g. all ranges beyond msg_count and start>end after clip).
+            # Without this log, the downstream "Skipping N unresolved upsert" loses the
+            # ranges string that would tell us *what* to fix.
+            try:
+                msg_count = len(getattr(self._extract_context, "messages", []) or [])
+            except Exception:
+                msg_count = -1
+            logger.warning(
+                "_range_targets: parsed to 0 target ids (ranges=%r, msg_count=%d, "
+                "elements=%d)",
+                ranges,
+                msg_count,
+                len(getattr(msg_range, "elements", []) or []),
+            )
         return list(dict.fromkeys(target_ids))
 
     def _resolve_operation_target_id(self, raw_peer_id: Any) -> Optional[str]:
