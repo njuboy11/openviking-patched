@@ -117,13 +117,17 @@ class SchemaModelGenerator:
                 ),
             )
 
-        field_definitions["page_id"] = (
-            Annotated[int, WithJsonSchema({"type": "integer"})],
-            Field(
-                ...,
-                description="Temporary page_id for identifying the target memory item.",
-            ),
-        )
+        # page_id is only meaningful for file-backed schemas (e.g. preferences, projects).
+        # For message-range schemas (e.g. events, trajectories) the LLM should use the
+        # "ranges" field instead, because the page_id map only holds file URIs.
+        if not has_ranges:
+            field_definitions["page_id"] = (
+                Annotated[int, WithJsonSchema({"type": "integer"})],
+                Field(
+                    ...,
+                    description="Temporary page_id for identifying the target memory item.",
+                ),
+            )
 
         # Add business fields from schema
         for field in memory_type.fields:
