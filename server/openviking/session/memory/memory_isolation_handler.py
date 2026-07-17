@@ -75,6 +75,8 @@ class MemoryIsolationHandler:
             return peer_id
         if raw_peer_id in (None, "") and self.allow_self:
             return _SELF_PEER_ID
+        if peer_id and self.allow_self:
+            return _SELF_PEER_ID
         return None
 
     @staticmethod
