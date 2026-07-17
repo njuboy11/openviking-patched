@@ -824,9 +824,25 @@ class MemoryUpdater:
                 f"{resolved_op.memory_type}(page_id={resolved_op.page_id})"
                 for resolved_op in unresolved_ops
             ]
-            raise ValueError(
-                f"Cannot apply operations: missing resolved URIs for {', '.join(missing)}"
+            logger.warning(
+                "Skipping %d unresolved upsert operation(s) (will not abort batch): %s",
+                len(unresolved_ops),
+                ", ".join(missing),
             )
+            # Remove unresolved ops from upsert_operations and record errors instead of crashing.
+            # This prevents one bad event (e.g. empty _range_targets result for ranges-only schemas)
+            # from blocking the entire commit batch. Related: schema_model_generator.py if not has_ranges.
+            operations.upsert_operations = [
+                resolved_op for resolved_op in operations.upsert_operations if resolved_op.uris
+            ]
+            for unresolved in unresolved_ops:
+                result.add_error(
+                    f"{unresolved.memory_type}(page_id={unresolved.page_id})",
+                    ValueError(
+                        f"missing resolved URIs for {unresolved.memory_type}"
+                        f"(page_id={unresolved.page_id})"
+                    ),
+                )
 
         # Distribute resolved_links to corresponding upsert operations
         self._distribute_links_to_operations(operations)
