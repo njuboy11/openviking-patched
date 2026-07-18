@@ -1,0 +1,11 @@
+--- server/openviking/session/memory_policy.py.bak-disable-peer-20260715	2026-07-18 15:14:09.343720296 +0800
++++ server/openviking/session/memory_policy.py	2026-07-18 15:14:09.343720296 +0800
+@@ -54,7 +54,7 @@
+     """Effective memory policy for one commit."""
+ 
+     self_enabled: bool = True
+-    peer_enabled: bool = True
++    peer_enabled: bool = False
+     memory_types: Optional[set[str]] = None
+     working_memory_enabled: bool = True
+ 
