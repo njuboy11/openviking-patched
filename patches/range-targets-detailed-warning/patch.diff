@@ -1,0 +1,39 @@
+--- /tmp/memory_isolation_handler.py.pre16.bak	2026-07-18 16:06:52.147060918 +0800
++++ /usr/local/lib/python3.12/dist-packages/openviking/session/memory/memory_isolation_handler.py	2026-07-18 16:06:56.370219774 +0800
+@@ -166,11 +166,20 @@
+ 
+     def _range_targets(self, ranges: Any) -> List[str]:
+         if not ranges or not self._extract_context:
++            msg_count = len(getattr(self._extract_context, "messages", []) or [])
++            logger.warning(
++                "_range_targets: empty/invalid ranges, returning [] (ranges=%r, msg_count=%d, "
++                "has_extract_context=%s)",
++                ranges, msg_count, bool(self._extract_context),
++            )
+             return []
+         try:
+             msg_range = self._extract_context.read_message_ranges(str(ranges))
+-        except Exception:
+-            logger.warning("Failed to parse memory ranges for peer memory: %s", ranges)
++        except Exception as exc:
++            logger.warning(
++                "_range_targets: read_message_ranges raised %s for ranges=%r",
++                type(exc).__name__, ranges,
++            )
+             return []
+ 
+         target_ids = []
+@@ -179,6 +188,13 @@
+                 target_id = self._message_target_id(msg)
+                 if target_id:
+                     target_ids.append(target_id)
++        if not target_ids:
++            msg_count = len(getattr(self._extract_context, "messages", []) or [])
++            logger.warning(
++                "_range_targets: parsed to 0 target ids (ranges=%r, msg_count=%d, "
++                "elements=%d)",
++                ranges, msg_count, len(getattr(msg_range, "elements", []) or []),
++            )
+         return list(dict.fromkeys(target_ids))
+ 
+     def _resolve_operation_target_id(self, raw_peer_id: Any) -> Optional[str]:
