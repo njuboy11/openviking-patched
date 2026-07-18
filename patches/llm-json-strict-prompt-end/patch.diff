@@ -1,0 +1,16 @@
+--- /tmp/llm.py.pre9.bak	2026-07-18 16:15:38.762748298 +0800
++++ /usr/local/lib/python3.12/dist-packages/openviking/models/vlm/llm.py	2026-07-18 16:15:42.382852468 +0800
+@@ -137,11 +137,12 @@
+ ```json
+ {schema_str}
+ ```
++
++你只能输出标准JSON，禁止任何解释文字、前言、markdown、换行注释，直接返回可JSON.parse的纯JSON字符串。
+ """
+     if description:
+         prompt += f"\n{description}\n"
+ 
+-    prompt += "\nOnly output JSON, no other text."
+     return prompt
+ 
+ 
