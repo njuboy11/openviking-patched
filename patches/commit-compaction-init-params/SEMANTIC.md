@@ -1,36 +1,48 @@
 # commit-compaction-init-params
 
 ## Summary
-调整 OV Plugin fallback 路径的硬上限，从 200_000 tokens 提升到 300_000 tokens。
+OV Plugin fallback 路径的硬上限从 30万 tokens 调回 20万 tokens（patch #7 升 30万 → 本次 reverse 回 20万）。
 
 ## Root Cause
-0.4.10 Plugin 已包含 `safeFallbackTruncate` 函数（L389），但 `MAX_FALLBACK_TOKENS = 200_000`（L172）的硬上限太保守 — 在长对话 + 自动注入 recall 上下文的场景下，20 万 tokens 不足以覆盖单次 commit 后 compact 阶段的完整消息体，导致 `assemblePassthrough` 在 12 条 fallback 路径里反复触发截断（消息被从头部逐条丢弃到 ≤ 20 万 tokens），重要上下文被截掉。
+patch #7 把硬上限从 200_000 升到 300_000 是为了避免 `safeFallbackTruncate` 反复截断长对话。
+
+但实测发现 **30 万 token 单次 compact 跑不完**：
+
+- 2026-07-18 16:57:23 OV 触发 compact（tokenBudget=300000），卡在 archive extract 阶段
+- 17:00:32 gateway 被 systemd 强杀 → compact 未完成 → 工作进度未 commit → 新 session 看不到
+- 单次 compact 太重 = 重启强杀时丢上下文风险高
 
 ## Fix
 **单行修改** `plugin/openviking-plugin/services/context-lifecycle-service.ts`：
 
 ```diff
-- const MAX_FALLBACK_TOKENS = 200_000;
-+ const MAX_FALLBACK_TOKENS = 300_000;
+- const MAX_FALLBACK_TOKENS = 300_000;
++ const MAX_FALLBACK_TOKENS = 200_000;
 ```
 
-`safeFallbackTruncate` 函数（L389-L407）的语义不变：
-```ts
-const cap = Math.min(tokenBudget, MAX_FALLBACK_TOKENS);
-// 从头部逐条丢弃直到 roughEstimate(truncated) <= cap
-```
+回退到 0.4.10 plugin 默认值。
 
-## Affected Versions
-- **0.4.10 Plugin (2026.7.15)**：默认 200_000，需要本 patch 升到 300_000
-- 0.4.9 及更早版本：plugin 没有 fallback truncate，需要先打原始 plugin-fallback-safe-truncate patch
+## Why 改回 20万
+鹏哥 2026-07-18 17:11 拍板：
+
+- **更频繁的 commit** = 单次 compact token 量更小 = 重启时更可能已 commit
+- **重启丢上下文根因**：300k compact 没跑完被强杀 → 工作进度未持久化
+- 接受 patch #7 提到的"长对话 fallback 截断"风险（20万硬上限 → 部分超长消息会被截），但**更看重"重启时进度不丢"**
+
+## Trade-off
+- 接受：长对话（接近 20万 tokens）触发 fallback 截断风险（patch #7 的原根因）
+- 缓解：
+  - systemd `KillSignal=SIGTERM + TimeoutStopSec=30` 给 OV flush 窗口
+  - 用 patch #17 retry-archive-extract 在 stuck 时手动重跑
 
 ## Changed File
 `plugin/openviking-plugin/services/context-lifecycle-service.ts`（L172）
 
-## Why 30 万不是 100 万
-鹏哥拍板：`maxActiveTranscriptBytes` 是 1MB（约 25-30 万 tokens）。把硬上限设到 30 万等于"刚好不溢出"。再大就回到"原始 1MB 全量 messages"问题。
-
 ## Verification
-- live plugin 已应用本 patch（`/root/.openclaw/extensions/openviking/services/context-lifecycle-service.ts` L172 = 300_000）
-- fallback 路径触发时日志显示 `truncated N→M messages, X→Y tokens (cap=300000, budget=...)`
-- 不再因 fallback 截断导致关键上下文丢失
+- live plugin 已应用：`.ts L172 = 200_000`，`.js dist L20 = 200_000`
+- sha256 已校验
+- 备份：`.bak-1784366025-pre-fallback-cap-200k`
+
+## Related
+- patch #7 (commit 04af535)：原 20万→30万 升
+- patch #17 (retry-archive-extract)：stuck compact 时手动 retry 兜底
