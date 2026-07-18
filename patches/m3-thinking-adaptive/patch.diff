@@ -1,0 +1,20 @@
+# patch #10: m3-thinking-adaptive (零代码 — 纯 ov.conf 配置)
+#
+# 0.4.10 live openai_vlm.py:144-152 已内建 extra_request_body 转发链路：
+#   kwargs["extra_body"] = self.extra_request_body (来自 ov.conf)
+#   → POST body 顶级 {"thinking": {"type": "adaptive"}}
+#
+# 因此本 patch 无 Python 改动，diff 为空，仅作为"零代码配置即可生效"的存档。
+# 验证位置：
+#   /usr/local/lib/python3.12/dist-packages/openviking/models/vlm/base.py:73
+#     self.extra_request_body = dict(config.get("extra_request_body") or {})
+#   /usr/local/lib/python3.12/dist-packages/openviking/models/vlm/backends/openai_vlm.py:144-152
+#     def _apply_provider_specific_extra_body(self, kwargs, thinking):
+#         extra_body = dict(self.extra_request_body)
+#         if self._supports_enable_thinking():
+#             extra_body["enable_thinking"] = bool(thinking)
+#         if extra_body:
+#             kwargs["extra_body"] = extra_body
+#
+# 配置位置（鹏哥 2026-07-18 已配）：
+#   /root/.openviking/ov.conf → vlm 段加 extra_request_body.thinking.type=adaptive
