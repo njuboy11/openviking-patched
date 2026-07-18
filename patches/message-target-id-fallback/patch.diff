@@ -1,0 +1,14 @@
+--- /tmp/memory_isolation_handler.py.pre14.bak	2026-07-18 16:11:38.823788457 +0800
++++ /usr/local/lib/python3.12/dist-packages/openviking/session/memory/memory_isolation_handler.py	2026-07-18 16:11:41.793899105 +0800
+@@ -75,6 +75,11 @@
+             return peer_id
+         if raw_peer_id in (None, "") and self.allow_self:
+             return _SELF_PEER_ID
++        # Fallback: message has a peer_id but is not a peer owner message
++        # (e.g. assistant messages). Without this, _range_targets() would
++        # silently drop these targets, causing events ranges parsing to fail.
++        if peer_id and self.allow_self:
++            return _SELF_PEER_ID
+         return None
+ 
+     @staticmethod
