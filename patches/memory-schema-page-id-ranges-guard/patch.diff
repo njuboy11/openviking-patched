@@ -1,0 +1,27 @@
+--- /tmp/schema_model_generator.py.pre12.bak	2026-07-18 16:11:03.172459639 +0800
++++ /usr/local/lib/python3.12/dist-packages/openviking/session/memory/schema_model_generator.py	2026-07-18 16:11:05.357541119 +0800
+@@ -121,13 +121,17 @@
+                 ),
+             )
+ 
+-        field_definitions["page_id"] = (
+-            Annotated[int, WithJsonSchema({"type": "integer"})],
+-            Field(
+-                ...,
+-                description="Temporary page_id for identifying the target memory item.",
+-            ),
+-        )
++        # page_id is only meaningful for file-backed schemas (e.g. preferences, projects).
++        # For message-range schemas (e.g. events, trajectories) the LLM should use the
++        # "ranges" field instead, because the page_id map only holds file URIs.
++        if not has_ranges:
++            field_definitions["page_id"] = (
++                Annotated[int, WithJsonSchema({"type": "integer"})],
++                Field(
++                    ...,
++                    description="Temporary page_id for identifying the target memory item.",
++                ),
++            )
+ 
+         # Add business fields from schema
+         for field in memory_type.fields:
