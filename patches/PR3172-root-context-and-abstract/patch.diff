@@ -1,0 +1,38 @@
+--- /tmp/session.py.pre4.bak	2026-07-18 16:15:06.712833964 +0800
++++ /usr/local/lib/python3.12/dist-packages/openviking/session/session.py	2026-07-18 16:15:12.600000828 +0800
+@@ -1490,6 +1490,17 @@
+ 
+                         if long_term_has_work:
+ 
++                            # Build a ROOT context for internal extract operations.
++                            # Trusted-mode auth middleware assigns USER role to session.ctx,
++                            # which triggers peer-isolation checks on writes to
++                            # peers/<id>/memories/ paths. Extract is an INTERNAL operation
++                            # and needs full read/write to function correctly.
++                            extract_ctx = RequestContext(
++                                user=self.ctx.user,
++                                role=Role.ROOT,
++                                actor_peer_id=self.ctx.actor_peer_id,
++                            )
++
+                             async def _run_long_term_memory_extraction() -> Any:
+                                 # strict_extract_errors=True lets transient failures
+                                 # surface so _run_retryable_phase2_step can retry them
+@@ -1499,7 +1510,7 @@
+                                     messages=extraction_messages,
+                                     user=self.user,
+                                     session_id=self.session_id,
+-                                    ctx=self.ctx,
++                                    ctx=extract_ctx,
+                                     strict_extract_errors=True,
+                                     latest_archive_overview=latest_archive_overview,
+                                     archive_uri=archive_uri,
+@@ -1523,7 +1534,7 @@
+                                 # so retries can engage and final failures are visible.
+                                 return await self._session_compressor.extract_execution_memories(
+                                     messages=extraction_messages,
+-                                    ctx=self.ctx,
++                                    ctx=extract_ctx,
+                                     strict_extract_errors=True,
+                                     latest_archive_overview=latest_archive_overview,
+                                     archive_uri=archive_uri,
